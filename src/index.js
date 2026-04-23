@@ -13,5 +13,6 @@ export { Gateway, extractToken, decodeClaims } from "./gateway.js";
 export { loadConfig, validateConfig } from "./config.js";
 export { evaluate, findRoute, matchRoute } from "./policy.js";
 export { scopeCovers, scopesCover, attenuate } from "./scope-match.js";
+export { TtlCache, aitCacheTtlMs, aitExp } from "./cache.js";
 
-export const GATEWAY_VERSION = "0.1.0-alpha.1";
+export const GATEWAY_VERSION = "0.1.0-alpha.2";

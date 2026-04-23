@@ -200,6 +200,89 @@ test("Gateway: forwards with identity headers when all checks pass", async () =>
   }
 });
 
+test("Gateway: cache short-circuits the second verifyAIT call", async () => {
+  const tokenWithDlg = `${b64("{\"alg\":\"EdDSA\",\"typ\":\"AIT\"}")}.${b64(`{"iss":"axis:ops:mira","dlg":"deleg_abc","exp":${Math.floor(Date.now() / 1000) + 300}}`)}.SIG`;
+
+  let verifyCalls = 0;
+  let agentCalls = 0;
+  let chainCalls = 0;
+  const client = {
+    async verifyAIT() {
+      verifyCalls++;
+      return { valid: true, agent_id: "axis:ops:mira", operator_id: "ops" };
+    },
+    async resolveAgent() {
+      agentCalls++;
+      return { operator_verification_tier: "domain" };
+    },
+    async verifyDelegationChain() {
+      chainCalls++;
+      return { delegations: [{ scope: ["write:articles"] }] };
+    },
+  };
+
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response("ok", { status: 200 });
+  try {
+    const g = new Gateway({ config: BASE_CONFIG, client });
+    const makeReq = () =>
+      new Request("http://x/api/articles", {
+        method: "POST",
+        headers: { authorization: `Bearer ${tokenWithDlg}` },
+        body: JSON.stringify({}),
+      });
+
+    await g.handle(makeReq());
+    await g.handle(makeReq());
+    await g.handle(makeReq());
+
+    // Three requests, but the client was called once per endpoint thanks to the cache.
+    assert.equal(verifyCalls, 1, `verifyAIT should hit once, got ${verifyCalls}`);
+    assert.equal(agentCalls, 1, `resolveAgent should hit once, got ${agentCalls}`);
+    assert.equal(chainCalls, 1, `verifyDelegationChain should hit once, got ${chainCalls}`);
+  } finally {
+    globalThis.fetch = origFetch;
+  }
+});
+
+test("Gateway: cache disabled via config makes every call go through", async () => {
+  const tokenWithDlg = `${b64("{\"alg\":\"EdDSA\",\"typ\":\"AIT\"}")}.${b64(`{"iss":"axis:ops:mira","dlg":"deleg_abc","exp":${Math.floor(Date.now() / 1000) + 300}}`)}.SIG`;
+
+  let verifyCalls = 0;
+  const client = {
+    async verifyAIT() {
+      verifyCalls++;
+      return { valid: true, agent_id: "axis:ops:mira", operator_id: "ops" };
+    },
+    async resolveAgent() {
+      return { operator_verification_tier: "domain" };
+    },
+    async verifyDelegationChain() {
+      return { delegations: [{ scope: ["write:articles"] }] };
+    },
+  };
+
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response("ok", { status: 200 });
+  try {
+    const g = new Gateway({
+      config: { ...BASE_CONFIG, cache: { enabled: false } },
+      client,
+    });
+    const makeReq = () =>
+      new Request("http://x/api/articles", {
+        method: "POST",
+        headers: { authorization: `Bearer ${tokenWithDlg}` },
+        body: JSON.stringify({}),
+      });
+    await g.handle(makeReq());
+    await g.handle(makeReq());
+    assert.equal(verifyCalls, 2, "cache was supposed to be disabled");
+  } finally {
+    globalThis.fetch = origFetch;
+  }
+});
+
 test("Gateway: public route with no token passes through", async () => {
   let forwardedUrl = null;
   const origFetch = globalThis.fetch;

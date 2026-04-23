@@ -20,6 +20,7 @@
 
 import { AxisClient } from "axis-protocol-sdk";
 
+import { TtlCache, aitCacheTtlMs } from "./cache.js";
 import { evaluate, findRoute } from "./policy.js";
 import { attenuate } from "./scope-match.js";
 
@@ -32,6 +33,7 @@ export class Gateway {
    * @param {string} opts.config.registryUrl
    * @param {string} opts.config.upstreamUrl
    * @param {Array} opts.config.routes
+   * @param {object} [opts.config.cache]             Cache config. See README.
    * @param {AxisClient} [opts.client]               Override for testing.
    * @param {string} [opts.headerPrefix]             Default "X-AXIS-"
    */
@@ -43,6 +45,73 @@ export class Gateway {
     this.config = config;
     this.client = client || new AxisClient({ registryUrl: config.registryUrl });
     this.headerPrefix = headerPrefix;
+
+    // Cache is opt-out. The config knob turns it off or shrinks it; the
+    // gateway always reads through the cache wrappers so tests see the same
+    // code path. Setting `enabled: false` makes every get() miss.
+    const cacheCfg = config.cache || {};
+    this._cacheEnabled = cacheCfg.enabled !== false;
+    this._aitCacheMaxMs = cacheCfg.aitCacheMaxMs ?? 60_000;
+    this._agentCacheTtlMs = cacheCfg.agentCacheTtlMs ?? 30_000;
+    this._chainCacheTtlMs = cacheCfg.chainCacheTtlMs ?? 30_000;
+    const cacheMax = cacheCfg.max ?? 500;
+    this._verifyCache = new TtlCache({ max: cacheMax });
+    this._agentCache = new TtlCache({ max: cacheMax });
+    this._chainCache = new TtlCache({ max: cacheMax });
+  }
+
+  // ── Cached wrappers around the SDK client ───────────────────────────────
+
+  async _cachedVerifyAIT(token) {
+    if (this._cacheEnabled) {
+      const hit = this._verifyCache.get(token);
+      if (hit) return hit;
+    }
+    const result = await this.client.verifyAIT(token);
+    if (this._cacheEnabled && result.valid) {
+      // Only cache successful verifications. Caching failures would let a
+      // revoked agent's rejection linger; caching successes up to the AIT's
+      // own exp is safe because exp is verified on every cache read.
+      const ttl = aitCacheTtlMs(token, { maxMs: this._aitCacheMaxMs });
+      this._verifyCache.set(token, result, ttl);
+    }
+    return result;
+  }
+
+  async _cachedResolveAgent(agentId) {
+    if (this._cacheEnabled) {
+      const hit = this._agentCache.get(agentId);
+      if (hit !== undefined) return hit;
+    }
+    let agent;
+    try {
+      agent = await this.client.resolveAgent(agentId);
+    } catch {
+      agent = null;
+    }
+    if (this._cacheEnabled && agent) {
+      this._agentCache.set(agentId, agent, this._agentCacheTtlMs);
+    }
+    return agent;
+  }
+
+  async _cachedVerifyChain(delegationId) {
+    if (this._cacheEnabled) {
+      const hit = this._chainCache.get(delegationId);
+      if (hit !== undefined) return hit;
+    }
+    let chain;
+    try {
+      chain = await this.client.verifyDelegationChain(delegationId);
+    } catch (err) {
+      chain = { error: err.message };
+    }
+    // Cache positive results; negative results are short-circuited so we
+    // don't pin a broken chain for the full TTL after transient failure.
+    if (this._cacheEnabled && chain && !chain.error) {
+      this._chainCache.set(delegationId, chain, this._chainCacheTtlMs);
+    }
+    return chain;
   }
 
   /**
@@ -78,11 +147,11 @@ export class Gateway {
       return this._deny(401, "missing_token", "This route requires an AXIS Identity Token");
     }
 
-    // 3. Verify with the registry. verifyAIT returns {valid: bool, ...}
+    // 3. Verify with the registry. _cachedVerifyAIT returns {valid: bool, ...}
     //    without throwing for bad tokens; it only throws on transport.
     let verified;
     try {
-      verified = await this.client.verifyAIT(token);
+      verified = await this._cachedVerifyAIT(token);
     } catch (err) {
       return this._deny(503, "registry_unreachable", `Registry verification failed: ${err.message}`);
     }
@@ -90,17 +159,17 @@ export class Gateway {
       return this._deny(401, "invalid_token", verified.error || "Token rejected by registry");
     }
 
-    // 4. Build the identity the policy engine sees. Agent info is cheap to
-    //    fetch and carries verification_tier + revocation state, so we
-    //    always pull it. Delegation chain only if the AIT claims one.
-    const agent = await this._safeResolveAgent(verified.agent_id);
+    // 4. Build the identity the policy engine sees. Agent info carries
+    //    verification_tier + revocation state. Delegation chain only if
+    //    the AIT claims one.
+    const agent = await this._cachedResolveAgent(verified.agent_id);
     const verificationTier = agent?.operator?.verification_tier || agent?.operator_verification_tier || null;
 
     let scopes = [];
     let delegationTrace = null;
     const claims = decodeClaims(token);
     if (claims?.dlg) {
-      const chain = await this._safeFetchDelegationChain(claims.dlg);
+      const chain = await this._cachedVerifyChain(claims.dlg);
       if (chain?.error) {
         return this._deny(403, "delegation_invalid", chain.error);
       }
@@ -134,22 +203,6 @@ export class Gateway {
   }
 
   // ── Internals ────────────────────────────────────────────────────────────
-
-  async _safeResolveAgent(agentId) {
-    try {
-      return await this.client.resolveAgent(agentId);
-    } catch {
-      return null;
-    }
-  }
-
-  async _safeFetchDelegationChain(delegationId) {
-    try {
-      return await this.client.verifyDelegationChain(delegationId);
-    } catch (err) {
-      return { error: err.message };
-    }
-  }
 
   async _forward(originalRequest, url, { identity, delegationTrace }) {
     const upstream = new URL(url.pathname + url.search, this.config.upstreamUrl);

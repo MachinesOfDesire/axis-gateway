@@ -130,12 +130,37 @@ Codes:
 - `delegation_invalid` (403): AIT's `dlg` claim couldn't be resolved
 - `upstream_unreachable` (502): upstream didn't respond
 
+## Caching
+
+Enabled by default. An in-process TTL-LRU caches three hot paths:
+
+- **verifyAIT** — cached up to `aitCacheMaxMs` (default 60s), but never longer than the AIT's own `exp` claim
+- **resolveAgent** — cached for `agentCacheTtlMs` (default 30s)
+- **verifyDelegationChain** — cached for `chainCacheTtlMs` (default 30s)
+
+Only successful verifications are cached; failures always re-hit the registry so revocation surfaces fast. Configure in `wrangler`-style config:
+
+```json
+{
+  "cache": {
+    "enabled": true,
+    "max": 500,
+    "aitCacheMaxMs": 60000,
+    "agentCacheTtlMs": 30000,
+    "chainCacheTtlMs": 30000
+  }
+}
+```
+
+Disable with `"cache": { "enabled": false }` if you want strict freshness (and can afford the extra registry load).
+
+**Revocation caveat:** if you revoke an agent mid-session and their AIT is still in cache, the gateway will keep accepting their token until the cache expires. Keep `aitCacheMaxMs` short if immediate revocation matters more than throughput.
+
 ## What the gateway does NOT do
 
 Kept narrow on purpose:
 
-- **No local verification.** Every check goes to the registry. That is where the truth lives. If the registry is down, the gateway fails closed.
-- **No caching.** v0.1 is stateless, no verification caching yet. Roadmap.
+- **No local verification.** Every check (on cache miss) goes to the registry. That is where the truth lives. If the registry is down, the gateway fails closed.
 - **No rate limiting.** Stick that in front of the gateway.
 - **No response inspection.** Forwards whatever upstream returns.
 - **No body rewriting.** Your upstream sees the original body.

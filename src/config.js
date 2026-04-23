@@ -83,6 +83,21 @@ export function validateConfig(cfg) {
     listenPort: cfg.listenPort || 8080,
     upstreamSharedSecret: cfg.upstreamSharedSecret || null,
     passthroughUnmatched: Boolean(cfg.passthroughUnmatched),
+    cache: cfg.cache
+      ? {
+          enabled: cfg.cache.enabled !== false,
+          max: typeof cfg.cache.max === "number" ? cfg.cache.max : 500,
+          aitCacheMaxMs: typeof cfg.cache.aitCacheMaxMs === "number" ? cfg.cache.aitCacheMaxMs : 60_000,
+          agentCacheTtlMs: typeof cfg.cache.agentCacheTtlMs === "number" ? cfg.cache.agentCacheTtlMs : 30_000,
+          chainCacheTtlMs: typeof cfg.cache.chainCacheTtlMs === "number" ? cfg.cache.chainCacheTtlMs : 30_000,
+        }
+      : {
+          enabled: true,
+          max: 500,
+          aitCacheMaxMs: 60_000,
+          agentCacheTtlMs: 30_000,
+          chainCacheTtlMs: 30_000,
+        },
     routes: cfg.routes.map((r) => ({
       pathPattern: r.pathPattern,
       method: r.method || null,
