@@ -1,0 +1,49 @@
+{
+  "name": "axis-gateway",
+  "version": "0.1.0-alpha.1",
+  "description": "Scope-enforcement gateway for the AXIS protocol. Verifies AITs, walks delegation chains, forwards to upstream with signed identity headers.",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./gateway": "./src/gateway.js",
+    "./policy": "./src/policy.js"
+  },
+  "bin": {
+    "axis-gateway": "./src/cli.js"
+  },
+  "scripts": {
+    "test": "node --test \"test/*.test.js\"",
+    "start": "node src/cli.js"
+  },
+  "keywords": [
+    "axis",
+    "axis-protocol",
+    "gateway",
+    "agent-identity",
+    "scope-enforcement",
+    "reverse-proxy"
+  ],
+  "author": "Josh Ashcroft",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "homepage": "https://github.com/MachinesOfDesire/axis-gateway",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MachinesOfDesire/axis-gateway.git"
+  },
+  "bugs": {
+    "url": "https://github.com/MachinesOfDesire/axis-gateway/issues"
+  },
+  "dependencies": {
+    "axis-protocol-sdk": "file:../axis-protocol-sdk"
+  },
+  "files": [
+    "src/",
+    "examples/",
+    "README.md",
+    "LICENSE"
+  ]
+}

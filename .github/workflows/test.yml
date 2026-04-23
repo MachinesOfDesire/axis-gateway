@@ -1,0 +1,44 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test on Node ${{ matrix.node }}${{ matrix.os == 'ubuntu-latest' && '' || format(' / {0}', matrix.os) }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22]
+        os: [ubuntu-latest]
+        include:
+          - node: 22
+            os: windows-latest
+          - node: 22
+            os: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node ${{ matrix.node }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Install deps
+        # Gateway depends on axis-protocol-sdk via file:../axis-protocol-sdk
+        # while local. Once the SDK is on npm, this step is `npm ci`.
+        # For CI today, swap the dependency to the published version before
+        # running this workflow, or check out the sibling repo.
+        run: npm install
+
+      - name: Run tests
+        run: npm test

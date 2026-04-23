@@ -1,0 +1,39 @@
+{
+  "_comment_": "Minimal gateway config. Points at the public AXIS registry and a local upstream you want to protect.",
+
+  "registryUrl": "https://registry.axisprime.ai",
+  "upstreamUrl": "http://localhost:3000",
+  "listenPort": 8080,
+
+  "_comment_sharedSecret_": "Shared secret the gateway sends as X-AXIS-Gateway-Secret so upstream can trust the X-AXIS-* identity headers. Rotate in production.",
+  "upstreamSharedSecret": "change-me-per-deploy",
+
+  "_comment_passthrough_": "If true, paths not listed below are forwarded unmodified. Default false: strict deny.",
+  "passthroughUnmatched": false,
+
+  "routes": [
+    {
+      "_comment_": "Anyone verified at domain-tier or higher can POST articles, provided their delegation chain grants write:articles.",
+      "pathPattern": "/api/articles",
+      "method": "POST",
+      "requiredScopes": ["write:articles"],
+      "minVerificationTier": "domain"
+    },
+    {
+      "_comment_": "Reading articles: any verified agent is fine. No scope check.",
+      "pathPattern": "/api/articles/**",
+      "method": "GET",
+      "minVerificationTier": "email"
+    },
+    {
+      "_comment_": "Admin surface: KYB-individual minimum plus an admin scope.",
+      "pathPattern": "/api/admin/**",
+      "requiredScopes": ["admin:*"],
+      "minVerificationTier": "kyb_individual"
+    },
+    {
+      "_comment_": "Public: no auth required. Token is ignored if present.",
+      "pathPattern": "/public/**"
+    }
+  ]
+}
