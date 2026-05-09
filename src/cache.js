@@ -68,20 +68,21 @@ export class TtlCache {
   }
 }
 
+// Use the SDK's b64url helper so this is portable across Node, CF Workers,
+// Deno, Bun, and browsers (no Node Buffer dependency).
+import { b64urlDecodeString } from "axis-protocol-sdk";
+
 /**
  * Extract the `exp` claim from an AIT without verifying. Returns undefined
  * if the token is malformed or has no exp. Unix seconds.
  */
 export function aitExp(token) {
   try {
+    if (typeof token !== "string") return undefined;
     const parts = token.split(".");
     if (parts.length !== 3) return undefined;
-    const padded = parts[1].replace(/-/g, "+").replace(/_/g, "/");
-    const padLen = (4 - (padded.length % 4)) % 4;
-    const b64 = padded + "=".repeat(padLen);
-    const json = Buffer.from(b64, "base64").toString("utf-8");
-    const payload = JSON.parse(json);
-    return typeof payload.exp === "number" ? payload.exp : undefined;
+    const payload = JSON.parse(b64urlDecodeString(parts[1]));
+    return typeof payload?.exp === "number" ? payload.exp : undefined;
   } catch {
     return undefined;
   }

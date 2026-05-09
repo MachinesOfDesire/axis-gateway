@@ -18,7 +18,7 @@
  * adaptation in ~20 lines.
  */
 
-import { AxisClient } from "axis-protocol-sdk";
+import { AxisClient, b64urlDecodeString } from "axis-protocol-sdk";
 
 import { TtlCache, aitCacheTtlMs } from "./cache.js";
 import { evaluate, findRoute } from "./policy.js";
@@ -272,16 +272,20 @@ export function extractToken(request) {
   return null;
 }
 
-/** Decode an AIT's payload claims without verifying. Returns null on bad shape. */
+/**
+ * Decode an AIT's payload claims without verifying. Returns null on bad shape.
+ * Uses the SDK's b64urlDecodeString helper so this works in Node, CF Workers,
+ * Deno, Bun, and browsers (no Node Buffer dependency).
+ *
+ * Only decodes the payload segment — the signature segment is left alone so
+ * tokens with placeholder signatures (e.g. in tests) still parse successfully.
+ */
 export function decodeClaims(token) {
   try {
+    if (typeof token !== "string") return null;
     const parts = token.split(".");
     if (parts.length !== 3) return null;
-    const padded = parts[1].replace(/-/g, "+").replace(/_/g, "/");
-    const padLen = (4 - (padded.length % 4)) % 4;
-    const b64 = padded + "=".repeat(padLen);
-    const json = Buffer.from(b64, "base64").toString("utf-8");
-    return JSON.parse(json);
+    return JSON.parse(b64urlDecodeString(parts[1]));
   } catch {
     return null;
   }
