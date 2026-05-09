@@ -1,6 +1,6 @@
 {
   "name": "axis-gateway",
-  "version": "0.1.0-alpha.2",
+  "version": "0.1.0-alpha.3",
   "description": "Scope-enforcement gateway for the AXIS protocol. Verifies AITs, walks delegation chains, forwards to upstream with signed identity headers.",
   "type": "module",
   "main": "src/index.js",
