@@ -26,7 +26,20 @@ jobs:
             os: macos-latest
 
     steps:
-      - uses: actions/checkout@v4
+      # Check out the gateway into a subdirectory so we can also clone the
+      # sibling axis-protocol-sdk and have file:../axis-protocol-sdk resolve.
+      # Once the SDK ships on npm and gateway's package.json switches to a
+      # versioned dep, this dance goes away — checkout to ./ and run `npm ci`.
+      - name: Checkout gateway
+        uses: actions/checkout@v4
+        with:
+          path: axis-gateway
+
+      - name: Checkout axis-protocol-sdk (sibling)
+        uses: actions/checkout@v4
+        with:
+          repository: MachinesOfDesire/axis-protocol-sdk
+          path: axis-protocol-sdk
 
       - name: Use Node ${{ matrix.node }}
         uses: actions/setup-node@v4
@@ -34,11 +47,9 @@ jobs:
           node-version: ${{ matrix.node }}
 
       - name: Install deps
-        # Gateway depends on axis-protocol-sdk via file:../axis-protocol-sdk
-        # while local. Once the SDK is on npm, this step is `npm ci`.
-        # For CI today, swap the dependency to the published version before
-        # running this workflow, or check out the sibling repo.
+        working-directory: axis-gateway
         run: npm install
 
       - name: Run tests
+        working-directory: axis-gateway
         run: npm test
