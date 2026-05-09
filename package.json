@@ -13,7 +13,7 @@
     "axis-gateway": "./src/cli.js"
   },
   "scripts": {
-    "test": "node --test \"test/*.test.js\"",
+    "test": "node --test test/cache.test.js test/gateway.test.js test/policy.test.js test/scope-match.test.js",
     "start": "node src/cli.js"
   },
   "keywords": [
